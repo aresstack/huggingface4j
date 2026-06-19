@@ -16,23 +16,70 @@ public final class HuggingFaceHub {
         return new Models(client);
     }
 
+    public Account account() {
+        return new Account(client);
+    }
+
     public static final class Builder {
         private HuggingFaceHubClient client;
+        private String endpoint = "https://huggingface.co";
+        private com.aresstack.huggingface.hub.auth.HuggingFaceTokenProvider tokenProvider = new com.aresstack.huggingface.hub.auth.HuggingFaceTokenProvider.Anonymous();
 
         public Builder client(HuggingFaceHubClient client) {
             this.client = client;
             return this;
         }
 
+        public Builder endpoint(String endpoint) {
+            this.endpoint = endpoint;
+            return this;
+        }
+
         public Builder anonymous() {
+            this.tokenProvider = new com.aresstack.huggingface.hub.auth.HuggingFaceTokenProvider.Anonymous();
+            return this;
+        }
+
+        public Builder accessToken(String token) {
+            this.tokenProvider = new com.aresstack.huggingface.hub.auth.HuggingFaceTokenProvider.Static(token);
+            return this;
+        }
+
+        public Builder environmentToken() {
+            this.tokenProvider = new com.aresstack.huggingface.hub.auth.HuggingFaceTokenProvider.Environment("HF_TOKEN");
             return this;
         }
 
         public HuggingFaceHub build() {
             if (client == null) {
-                client = new com.aresstack.huggingface.hub.internal.DefaultHuggingFaceHubClient();
+                com.aresstack.huggingface.hub.http.HubHttpClient httpClient = new com.aresstack.huggingface.hub.http.UrlConnectionHubHttpClient(endpoint, tokenProvider);
+                client = new com.aresstack.huggingface.hub.internal.DefaultHuggingFaceHubClient(httpClient);
             }
             return new HuggingFaceHub(client);
+        }
+    }
+
+    public static final class Account {
+        private final HuggingFaceHubClient client;
+
+        private Account(HuggingFaceHubClient client) {
+            this.client = client;
+        }
+
+        public WhoAmI whoAmI() {
+            return new WhoAmI(client);
+        }
+    }
+
+    public static final class WhoAmI {
+        private final HuggingFaceHubClient client;
+
+        private WhoAmI(HuggingFaceHubClient client) {
+            this.client = client;
+        }
+
+        public com.aresstack.huggingface.hub.account.UserProfile execute() throws HuggingFaceHubException {
+            return client.whoAmI();
         }
     }
 
@@ -96,8 +143,41 @@ public final class HuggingFaceHub {
             this.id = id;
         }
 
+        public Details details() {
+            return new Details(client, id);
+        }
+
         public com.aresstack.huggingface.hub.model.ModelDetails execute() throws HuggingFaceHubException {
-            return client.getModelDetails(new com.aresstack.huggingface.hub.model.ModelDetailsQuery(com.aresstack.huggingface.hub.model.ModelReference.model(id)));
+            return details().execute();
+        }
+    }
+
+    public static final class Details {
+        private final HuggingFaceHubClient client;
+        private final com.aresstack.huggingface.hub.model.ModelDetailsQuery query;
+
+        private Details(HuggingFaceHubClient client, String id) {
+            this.client = client;
+            this.query = new com.aresstack.huggingface.hub.model.ModelDetailsQuery(com.aresstack.huggingface.hub.model.ModelReference.model(id));
+        }
+
+        public Details revision(String revision) {
+            query.revision(revision);
+            return this;
+        }
+
+        public Details includeFiles() {
+            query.include("siblings");
+            return this;
+        }
+
+        public Details includeConfig() {
+            query.include("config");
+            return this;
+        }
+
+        public com.aresstack.huggingface.hub.model.ModelDetails execute() throws HuggingFaceHubException {
+            return client.getModelDetails(query);
         }
     }
 }

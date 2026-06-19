@@ -17,7 +17,7 @@ configurations {
 }
 
 dependencies {
-    api 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+    api 'com.google.code.gson:gson:2.13.1'
 
     openApiGenerator 'org.openapitools:openapi-generator-cli:7.14.0'
 
@@ -48,7 +48,7 @@ tasks.register('generateHuggingFaceOpenApiModels', JavaExec) {
             '-g', 'java',
             '-o', generatedOpenApiDir.get().asFile.absolutePath,
             '--global-property', 'models,modelDocs=false,modelTests=false,apis=false,supportingFiles=false',
-            '--additional-properties', 'modelPackage=com.aresstack.huggingface.hub.generated.model,dateLibrary=java8,serializationLibrary=jackson,serializableModel=true,hideGenerationTimestamp=true'
+            '--additional-properties', 'modelPackage=com.aresstack.huggingface.hub.generated.model,dateLibrary=java8,serializationLibrary=gson,serializableModel=true,hideGenerationTimestamp=true'
     ]
 }
 
