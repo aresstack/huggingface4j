@@ -1,0 +1,87 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'io.github.aresstack'
+version = '0.1.0-SNAPSHOT'
+
+def generatedOpenApiDir = layout.buildDirectory.dir('generated/huggingface-openapi')
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    openApiGenerator
+}
+
+dependencies {
+    api 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+
+    openApiGenerator 'org.openapitools:openapi-generator-cli:7.14.0'
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+    withSourcesJar()
+    withJavadocJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('generateHuggingFaceOpenApiModels', JavaExec) {
+    group = 'openapi'
+    description = 'Generate Hugging Face Hub OpenAPI DTOs only. Public library API remains hand-written.'
+    classpath = configurations.openApiGenerator
+    mainClass = 'org.openapitools.codegen.OpenAPIGenerator'
+    args = [
+            'generate',
+            '-i', 'https://huggingface.co/.well-known/openapi.json',
+            '-g', 'java',
+            '-o', generatedOpenApiDir.get().asFile.absolutePath,
+            '--global-property', 'models,modelDocs=false,modelTests=false,apis=false,supportingFiles=false',
+            '--additional-properties', 'modelPackage=com.aresstack.huggingface.hub.generated.model,dateLibrary=java8,serializationLibrary=jackson,serializableModel=true,hideGenerationTimestamp=true'
+    ]
+}
+
+test {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            pom {
+                name = 'huggingface-hub-java'
+                description = 'Small Java 8 fluent client for the Hugging Face Hub API.'
+                url = 'https://github.com/aresstack/huggingface-hub-java'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'aresstack'
+                        name = 'AresStack'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:https://github.com/aresstack/huggingface-hub-java.git'
+                    developerConnection = 'scm:git:ssh://git@github.com:aresstack/huggingface-hub-java.git'
+                    url = 'https://github.com/aresstack/huggingface-hub-java'
+                }
+            }
+        }
+    }
+}
