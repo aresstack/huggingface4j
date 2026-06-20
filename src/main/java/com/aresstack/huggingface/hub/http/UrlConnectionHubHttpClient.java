@@ -96,11 +96,23 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
         connection.setReadTimeout(60000);
         connection.setRequestMethod(request.getMethod());
         connection.setRequestProperty("Accept", accept);
+        if (request.getContentType() != null) {
+            connection.setRequestProperty("Content-Type", request.getContentType());
+        }
         if (sendAuthorization) {
             applyAuthorization(connection);
         }
         for (Map.Entry<String, String> header : request.getHeaders().entrySet()) {
             connection.setRequestProperty(header.getKey(), header.getValue());
+        }
+        if (request.hasBody()) {
+            connection.setDoOutput(true);
+            OutputStream outputStream = connection.getOutputStream();
+            try {
+                outputStream.write(request.getBody());
+            } finally {
+                outputStream.close();
+            }
         }
         return connection;
     }

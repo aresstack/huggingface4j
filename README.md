@@ -67,6 +67,7 @@ Streaming file download:
 - Static access token support
 - HF_TOKEN environment token support
 - Custom token provider support
+- OAuth browser login support
 - Bearer token HTTP header
 - Fluent model search with common filters
 - Open query parameter escape hatch
