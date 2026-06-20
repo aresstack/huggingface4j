@@ -1,6 +1,6 @@
-# huggingface-hub-java
+# huggingface4j
 
-Java 8 fluent client for the Hugging Face Hub API.
+Java 8 fluent client for the Hugging Face Hub API, with an ollama4j-style fluent API.
 
 The public API is hand-written and stable. OpenAPI generated classes are treated as transport DTOs only.
 

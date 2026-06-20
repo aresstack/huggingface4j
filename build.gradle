@@ -61,9 +61,9 @@ publishing {
         mavenJava(MavenPublication) {
             from components.java
             pom {
-                name = 'huggingface-hub-java'
-                description = 'Small Java 8 fluent client for the Hugging Face Hub API.'
-                url = 'https://github.com/aresstack/huggingface-hub-java'
+                name = 'huggingface4j'
+                description = 'Small Java 8 fluent client for the Hugging Face Hub API, inspired by the ollama4j style.'
+                url = 'https://github.com/aresstack/huggingface4j'
                 licenses {
                     license {
                         name = 'The Apache License, Version 2.0'
@@ -77,9 +77,9 @@ publishing {
                     }
                 }
                 scm {
-                    connection = 'scm:git:https://github.com/aresstack/huggingface-hub-java.git'
-                    developerConnection = 'scm:git:ssh://git@github.com:aresstack/huggingface-hub-java.git'
-                    url = 'https://github.com/aresstack/huggingface-hub-java'
+                    connection = 'scm:git:https://github.com/aresstack/huggingface4j.git'
+                    developerConnection = 'scm:git:ssh://git@github.com:aresstack/huggingface4j.git'
+                    url = 'https://github.com/aresstack/huggingface4j'
                 }
             }
         }
