@@ -3,14 +3,12 @@ package com.aresstack.huggingface.hub.http;
 import com.aresstack.huggingface.hub.auth.HuggingFaceTokenProvider;
 
 import java.io.ByteArrayOutputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.Map;
 
 public final class UrlConnectionHubHttpClient implements HubHttpClient {
@@ -29,53 +27,35 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
 
     @Override
     public HubHttpResponse execute(HubHttpRequest request) throws IOException {
-        HttpURLConnection connection = openFollowingRedirects(request, "application/json");
+        HttpURLConnection connection = openFollowingRedirects(request, "application/json", 0L);
         int statusCode = connection.getResponseCode();
         InputStream inputStream = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
         return new HubHttpResponse(statusCode, readFully(inputStream), connection.getContentType());
     }
 
     @Override
-    public long download(HubHttpRequest request, Path targetFile, com.aresstack.huggingface.hub.download.ProgressListener progressListener) throws IOException {
-        HttpURLConnection connection = openFollowingRedirects(request, "application/octet-stream");
+    public HubHttpStream openStream(HubHttpRequest request, long rangeStart) throws IOException {
+        HttpURLConnection connection = openFollowingRedirects(request, "application/octet-stream", rangeStart);
         int statusCode = connection.getResponseCode();
         if (statusCode < 200 || statusCode >= 300) {
-            InputStream errorStream = connection.getErrorStream();
-            String body = new String(readFully(errorStream), "UTF-8");
-            throw new IOException("HTTP " + statusCode + ": " + body);
+            byte[] errorBody = readFully(connection.getErrorStream());
+            return new HubHttpStream(statusCode, null, errorBody.length, errorBody.length,
+                    connection.getURL().toString(), false,
+                    new java.io.ByteArrayInputStream(errorBody));
         }
-        Path parent = targetFile.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        long totalBytes = connection.getContentLengthLong();
-        long downloaded = 0L;
-        InputStream inputStream = connection.getInputStream();
-        try {
-            OutputStream outputStream = Files.newOutputStream(targetFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-            try {
-                byte[] chunk = new byte[1024 * 1024];
-                int read;
-                while ((read = inputStream.read(chunk)) >= 0) {
-                    outputStream.write(chunk, 0, read);
-                    downloaded += read;
-                    if (progressListener != null) {
-                        progressListener.onProgress(new com.aresstack.huggingface.hub.download.DownloadProgress(downloaded, totalBytes));
-                    }
-                }
-            } finally {
-                outputStream.close();
-            }
-        } finally {
-            inputStream.close();
-        }
-        return downloaded;
+        boolean partial = statusCode == 206;
+        long contentLength = connection.getContentLengthLong();
+        long totalLength = totalLengthFrom(connection, contentLength, partial);
+        String etag = firstHeader(connection, "X-Linked-ETag", "ETag");
+        InputStream body = new ConnectionInputStream(connection.getInputStream(), connection);
+        return new HubHttpStream(statusCode, etag, contentLength, totalLength,
+                connection.getURL().toString(), partial, body);
     }
 
-    private HttpURLConnection openFollowingRedirects(HubHttpRequest request, String accept) throws IOException {
+    private HttpURLConnection openFollowingRedirects(HubHttpRequest request, String accept, long rangeStart) throws IOException {
         URL url = new URL(endpoint + request.getPathAndQuery());
         for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
-            HttpURLConnection connection = openUrl(url, request, accept, endpointHost.equalsIgnoreCase(url.getHost()));
+            HttpURLConnection connection = openUrl(url, request, accept, rangeStart, endpointHost.equalsIgnoreCase(url.getHost()));
             int statusCode = connection.getResponseCode();
             if (!isRedirect(statusCode)) {
                 return connection;
@@ -89,13 +69,16 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
         throw new IOException("Too many redirects while contacting Hugging Face Hub.");
     }
 
-    private HttpURLConnection openUrl(URL url, HubHttpRequest request, String accept, boolean sendAuthorization) throws IOException {
+    private HttpURLConnection openUrl(URL url, HubHttpRequest request, String accept, long rangeStart, boolean sendAuthorization) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(60000);
         connection.setRequestMethod(request.getMethod());
         connection.setRequestProperty("Accept", accept);
+        if (rangeStart > 0L) {
+            connection.setRequestProperty("Range", "bytes=" + rangeStart + "-");
+        }
         if (request.getContentType() != null) {
             connection.setRequestProperty("Content-Type", request.getContentType());
         }
@@ -115,6 +98,28 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
             }
         }
         return connection;
+    }
+
+    private static long totalLengthFrom(HttpURLConnection connection, long contentLength, boolean partial) {
+        if (partial) {
+            String contentRange = connection.getHeaderField("Content-Range");
+            if (contentRange != null) {
+                int slash = contentRange.lastIndexOf('/');
+                if (slash >= 0 && slash + 1 < contentRange.length()) {
+                    try {
+                        return Long.parseLong(contentRange.substring(slash + 1).trim());
+                    } catch (NumberFormatException ignored) {
+                        // fall through
+                    }
+                }
+            }
+        }
+        return contentLength;
+    }
+
+    private static String firstHeader(HttpURLConnection connection, String first, String second) {
+        String value = connection.getHeaderField(first);
+        return value != null ? value : connection.getHeaderField(second);
     }
 
     private static boolean isRedirect(int statusCode) {
@@ -166,5 +171,24 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    /** Closes the underlying {@link HttpURLConnection} when the body stream is closed. */
+    private static final class ConnectionInputStream extends FilterInputStream {
+        private final HttpURLConnection connection;
+
+        private ConnectionInputStream(InputStream in, HttpURLConnection connection) {
+            super(in);
+            this.connection = connection;
+        }
+
+        @Override
+        public void close() throws IOException {
+            try {
+                super.close();
+            } finally {
+                connection.disconnect();
+            }
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.aresstack.huggingface.hub.model;
 import com.aresstack.huggingface.hub.HuggingFaceHubClient;
 import com.aresstack.huggingface.hub.HuggingFaceHubException;
 import com.aresstack.huggingface.hub.download.ModelFileDownloadRequest;
+import com.aresstack.huggingface.hub.download.SnapshotDownloadRequest;
 
 public final class ModelResource {
 
@@ -24,6 +25,10 @@ public final class ModelResource {
 
     public ModelFileDownloadRequest file(String path) {
         return new ModelFileDownloadRequest(client, id, path);
+    }
+
+    public SnapshotDownloadRequest snapshot() {
+        return new SnapshotDownloadRequest(client, id);
     }
 
     public ModelDetails execute() throws HuggingFaceHubException {

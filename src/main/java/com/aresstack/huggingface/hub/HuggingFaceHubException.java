@@ -13,6 +13,28 @@ public class HuggingFaceHubException extends Exception {
         super(message, cause);
     }
 
+    /**
+     * Map an HTTP status code and body to the most specific {@link Response} subtype.
+     * Returns {@code null} for successful (2xx) responses.
+     */
+    public static Response forStatus(int statusCode, String body) {
+        if (statusCode >= 200 && statusCode < 300) {
+            return null;
+        }
+        switch (statusCode) {
+            case 401:
+                return new Unauthorized(body);
+            case 403:
+                return new Forbidden(body);
+            case 404:
+                return new NotFound(body);
+            case 429:
+                return new RateLimited(body);
+            default:
+                return new Response(statusCode, "Hugging Face Hub returned HTTP " + statusCode + ".", body);
+        }
+    }
+
     public static class Response extends HuggingFaceHubException {
 
         private final int statusCode;
