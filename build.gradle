@@ -18,7 +18,7 @@ configurations {
 }
 
 dependencies {
-    api 'com.google.code.gson:gson:2.13.1'
+    api 'com.google.code.gson:gson:2.14.0'
 
     openApiGenerator 'org.openapitools:openapi-generator-cli:7.14.0'
 
