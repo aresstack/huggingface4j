@@ -18,4 +18,6 @@ public interface HuggingFaceHubClient {
     ModelDetails getModelDetails(ModelDetailsQuery query) throws HuggingFaceHubException;
 
     List<HubFile> listModelFiles(ModelDetailsQuery query) throws HuggingFaceHubException;
+
+    com.aresstack.huggingface.hub.download.DownloadResult downloadFile(com.aresstack.huggingface.hub.download.DownloadRequest request) throws HuggingFaceHubException;
 }

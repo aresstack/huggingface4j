@@ -38,12 +38,45 @@ public final class HubJsonMapper {
     }
 
     private ModelSummary toModelSummary(JsonObject object) {
+        List<String> tags = tags(object);
         return new ModelSummary(
                 firstText(object, "id", "modelId"),
+                text(object, "author"),
                 firstText(object, "pipeline_tag", "pipelineTag"),
                 firstText(object, "library_name", "libraryName"),
+                tags,
+                license(tags, object),
+                booleanValue(object, "gated"),
                 longValue(object, "downloads"),
                 longValue(object, "likes"));
+    }
+
+    private List<String> tags(JsonObject object) {
+        List<String> tags = new ArrayList<String>();
+        JsonArray array = array(object, "tags");
+        if (array == null) {
+            return tags;
+        }
+        for (int index = 0; index < array.size(); index++) {
+            JsonElement value = array.get(index);
+            if (value != null && !value.isJsonNull()) {
+                tags.add(value.getAsString());
+            }
+        }
+        return tags;
+    }
+
+    private String license(List<String> tags, JsonObject object) {
+        String direct = text(object, "license");
+        if (direct != null) {
+            return direct;
+        }
+        for (String tag : tags) {
+            if (tag != null && tag.startsWith("license:")) {
+                return tag.substring("license:".length());
+            }
+        }
+        return null;
     }
 
     private List<HubFile> files(JsonObject root) {
@@ -85,5 +118,20 @@ public final class HubJsonMapper {
     private static Long longValue(JsonObject object, String name) {
         JsonElement value = object.get(name);
         return value == null || value.isJsonNull() ? null : Long.valueOf(value.getAsLong());
+    }
+
+    private static Boolean booleanValue(JsonObject object, String name) {
+        JsonElement value = object.get(name);
+        if (value == null || value.isJsonNull()) {
+            return null;
+        }
+        if (value.isJsonPrimitive() && value.getAsJsonPrimitive().isBoolean()) {
+            return Boolean.valueOf(value.getAsBoolean());
+        }
+        String text = value.getAsString();
+        if ("true".equalsIgnoreCase(text) || "false".equalsIgnoreCase(text)) {
+            return Boolean.valueOf(text);
+        }
+        return null;
     }
 }

@@ -53,6 +53,17 @@ public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
         return getModelDetails(query).getFiles();
     }
 
+    @Override
+    public com.aresstack.huggingface.hub.download.DownloadResult downloadFile(com.aresstack.huggingface.hub.download.DownloadRequest request) throws HuggingFaceHubException {
+        String path = "/" + request.getModelReference().getRepoId() + "/resolve/" + request.getRevision() + "/" + request.getFilePath();
+        try {
+            long bytes = httpClient.download(HubHttpRequest.get(HubUrlBuilder.path(path)), request.getTargetFile(), request.getProgressListener());
+            return new com.aresstack.huggingface.hub.download.DownloadResult(request.getTargetFile(), bytes);
+        } catch (IOException exception) {
+            throw new HuggingFaceHubException("Failed to download Hugging Face file.", exception);
+        }
+    }
+
     private HubHttpResponse execute(HubHttpRequest request) throws HuggingFaceHubException {
         try {
             return httpClient.execute(request);
@@ -62,11 +73,13 @@ public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
     }
 
     private static void requireSuccess(HubHttpResponse response) throws HuggingFaceHubException.Response {
-        int statusCode = response.getStatusCode();
+        requireSuccess(response.getStatusCode(), response.getBodyAsUtf8());
+    }
+
+    private static void requireSuccess(int statusCode, String body) throws HuggingFaceHubException.Response {
         if (statusCode >= 200 && statusCode < 300) {
             return;
         }
-        String body = response.getBodyAsUtf8();
         if (statusCode == 401) {
             throw new HuggingFaceHubException.Unauthorized(body);
         }

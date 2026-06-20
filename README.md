@@ -2,11 +2,13 @@
 
 Java 8 fluent client for the Hugging Face Hub API.
 
-Example:
+The public API is hand-written and stable. OpenAPI generated classes are treated as transport DTOs only.
 
-    HuggingFaceHub hub = HuggingFaceHub.standard()
-            .anonymous()
-            .build();
+## Usage
+
+Anonymous public model search:
+
+    HuggingFaceHub hub = HuggingFaceHub.standard().anonymous().build();
 
     ModelSearchResult result = hub.models()
             .search("qwen coder")
@@ -16,18 +18,52 @@ Example:
             .limit(20)
             .execute();
 
-The public API is hand-written and stable. OpenAPI generated classes are treated as transport DTOs only.
+Authenticated access:
 
-## First slice
+    HuggingFaceHub hub = HuggingFaceHub.standard().accessToken("hf_...").build();
+
+Environment token:
+
+    HuggingFaceHub hub = HuggingFaceHub.standard().environmentToken().build();
+
+Model details:
+
+    ModelDetails details = hub.models()
+            .model("Qwen/Qwen2.5-Coder-0.5B-Instruct")
+            .details()
+            .includeFiles()
+            .includeConfig()
+            .execute();
+
+Files only:
+
+    java.util.List<HubFile> files = hub.models()
+            .model("Qwen/Qwen2.5-Coder-0.5B-Instruct")
+            .files()
+            .execute();
+
+Streaming file download:
+
+    DownloadResult download = hub.models()
+            .model("Qwen/Qwen2.5-Coder-0.5B-Instruct")
+            .file("config.json")
+            .revision("main")
+            .downloadTo(targetFile)
+            .execute();
+
+## Current slice
 
 - Anonymous API access
 - Static access token support
 - HF_TOKEN environment token support
+- Bearer token HTTP header
 - Fluent model search
 - Model details and file listing
-- Single file download with progress callback
+- Gson JSON mapping
+- Streaming single-file downloads
 - whoAmI() account lookup
 - Java 8 target
+- Maven publishing metadata
 
 ## Generate Hugging Face OpenAPI DTOs
 
