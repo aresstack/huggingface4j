@@ -5,6 +5,7 @@ with an [ollama4j](https://github.com/ollama4j/ollama4j)-style fluent API.
 
 - Model search, model details and file listing
 - Robust single-file and snapshot downloads (temp file + atomic move, resume, checksum verification)
+- Repository management and uploads: create/delete/settings, plus file upload/delete via the commit API
 - Token authentication (static, environment, custom provider) and OAuth browser login
 - Only one runtime dependency: Gson
 
@@ -129,6 +130,75 @@ List<DownloadResult> results = hub.models()
         .execute();
 ```
 
+## Repository management and uploads (write operations)
+
+All write operations require an authenticated token with write access to the target repository.
+
+Create / delete / settings:
+
+```java
+// Create a repository
+hub.repositories()
+        .create("aresstack/my-model")
+        .type(RepositoryType.MODEL)
+        .privateRepository(false)
+        .execute();
+
+// Change visibility / gating
+hub.repositories().model("aresstack/my-model")
+        .settings()
+        .privateRepository(true)
+        .gated("auto")
+        .execute();
+
+// Delete a repository — irreversible, so confirmation is mandatory
+hub.repositories()
+        .delete("aresstack/my-model")
+        .type(RepositoryType.MODEL)
+        .confirm("aresstack/my-model")   // must repeat the exact id
+        .execute();
+```
+
+Upload / delete files via the commit API:
+
+```java
+// Single file upload
+hub.repositories()
+        .model("aresstack/my-model")
+        .uploadFile(Paths.get("build/config.json"))
+        .to("config.json")
+        .commitMessage("Upload config")
+        .execute();
+
+// Single file delete
+hub.repositories()
+        .model("aresstack/my-model")
+        .deleteFile("old.bin")
+        .commitMessage("Remove old file")
+        .execute();
+
+// Multiple operations in one commit (optionally as a pull request)
+CommitResult commit = hub.repositories()
+        .model("aresstack/my-model")
+        .commit()
+        .addFile("config.json", Paths.get("build/config.json"))
+        .addFile("README.md", "# My Model\n".getBytes(StandardCharsets.UTF_8))
+        .deleteFile("old.bin")
+        .commitMessage("Update model card and config")
+        .createPullRequest(true)
+        .execute();
+
+System.out.println(commit.getCommitUrl());
+```
+
+> **Note:** file contents are sent inline (base64) in the commit request. This is ideal for text and
+> small binary files (model cards, configs, tokenizers). Very large / LFS-tracked files require the
+> Git-LFS pre-upload protocol, which is not implemented yet — see `problems.md`.
+
+Deletion is guarded: `delete(...).execute()` throws unless you confirm with the exact repository id
+via `confirm("org/name")` (or `confirmDestructiveAction()`), so a repository can never be removed by
+a single accidental call.
+
 ## Gated and private models
 
 Some repositories (for example `meta-llama/*`) are **gated**: you must accept their terms on the Hub
@@ -225,6 +295,9 @@ Optional: regenerate the Hugging Face OpenAPI DTOs (not part of the public API):
 - Robust downloads: streaming to a temp file, atomic move, resume, overwrite policy, and optional
   size/SHA-256 verification; typed HTTP error mapping.
 - Snapshot/repository download with allow/ignore glob patterns.
+- Repository write API: create/delete/settings, file upload/delete and multi-operation commits
+  (with optional pull request), plus guarded, confirmation-gated repository deletion.
+- HTTP layer with JSON `POST`/`PUT`/`PATCH`/`DELETE`, NDJSON bodies and typed response headers.
 - `Authorization` header restricted to the Hub host across redirects.
 - Java 8 target; published to Maven Central with sources and Javadoc.
 

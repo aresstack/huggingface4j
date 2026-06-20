@@ -37,6 +37,26 @@ public final class HubJsonMapper {
         return new ModelDetails(toModelSummary(root), text(root, "sha"), files(root));
     }
 
+    public String createdRepositoryUrl(String json) throws HuggingFaceHubException {
+        JsonElement root = parse(json);
+        if (!root.isJsonObject()) {
+            return null;
+        }
+        return firstText(root.getAsJsonObject(), "url", "repoUrl");
+    }
+
+    public com.aresstack.huggingface.hub.upload.CommitResult toCommitResult(String json) throws HuggingFaceHubException {
+        JsonElement root = parse(json);
+        if (!root.isJsonObject()) {
+            return new com.aresstack.huggingface.hub.upload.CommitResult(null, null, null);
+        }
+        JsonObject object = root.getAsJsonObject();
+        return new com.aresstack.huggingface.hub.upload.CommitResult(
+                firstText(object, "commitOid", "oid"),
+                firstText(object, "commitUrl", "url"),
+                firstText(object, "pullRequestUrl", "prUrl"));
+    }
+
     private ModelSummary toModelSummary(JsonObject object) {
         List<String> tags = tags(object);
         return new ModelSummary(

@@ -74,6 +74,48 @@ final class UrlConnectionHubHttpClientTest {
     }
 
     @Test
+    void tunnelsPatchThroughPostWithOverrideHeader() throws Exception {
+        final AtomicReference<String> method = new AtomicReference<String>();
+        final AtomicReference<String> override = new AtomicReference<String>();
+        final AtomicReference<String> body = new AtomicReference<String>();
+        server.createContext("/api/models/org/model/settings", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                method.set(exchange.getRequestMethod());
+                override.set(exchange.getRequestHeaders().getFirst("X-HTTP-Method-Override"));
+                body.set(readBody(exchange));
+                respond(exchange, 200, "{}".getBytes(StandardCharsets.UTF_8));
+            }
+        });
+
+        HubHttpClient client = new UrlConnectionHubHttpClient(endpoint("127.0.0.1"), new HuggingFaceTokenProvider.Anonymous());
+        client.execute(HubHttpRequest.patchJson("/api/models/org/model/settings", "{\"private\":true}"));
+
+        assertEquals("POST", method.get());
+        assertEquals("PATCH", override.get());
+        assertEquals("{\"private\":true}", body.get());
+    }
+
+    @Test
+    void exposesResponseHeaders() throws Exception {
+        server.createContext("/created", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                exchange.getResponseHeaders().add("Location", "https://huggingface.co/org/model");
+                exchange.getResponseHeaders().add("ETag", "\"v1\"");
+                respond(exchange, 201, "{}".getBytes(StandardCharsets.UTF_8));
+            }
+        });
+
+        HubHttpClient client = new UrlConnectionHubHttpClient(endpoint("127.0.0.1"), new HuggingFaceTokenProvider.Anonymous());
+        HubHttpResponse response = client.execute(HubHttpRequest.postJson("/created", "{}"));
+
+        assertEquals(201, response.getStatusCode());
+        assertEquals("https://huggingface.co/org/model", response.getLocation());
+        assertEquals("\"v1\"", response.getETag());
+    }
+
+    @Test
     void keepsAuthorizationOnSameHostRedirect() throws Exception {
         final AtomicReference<String> auth = new AtomicReference<String>();
         server.createContext("/redir", redirectTo("http://127.0.0.1:" + port + "/secured-same"));

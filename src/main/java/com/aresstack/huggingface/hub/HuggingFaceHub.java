@@ -6,6 +6,7 @@ import com.aresstack.huggingface.hub.http.HubHttpClient;
 import com.aresstack.huggingface.hub.http.UrlConnectionHubHttpClient;
 import com.aresstack.huggingface.hub.internal.DefaultHuggingFaceHubClient;
 import com.aresstack.huggingface.hub.model.ModelOperations;
+import com.aresstack.huggingface.hub.repo.RepositoryOperations;
 
 public final class HuggingFaceHub {
 
@@ -25,6 +26,10 @@ public final class HuggingFaceHub {
 
     public AccountOperations account() {
         return new AccountOperations(client);
+    }
+
+    public RepositoryOperations repositories() {
+        return new RepositoryOperations(client);
     }
 
     public static final class Builder {

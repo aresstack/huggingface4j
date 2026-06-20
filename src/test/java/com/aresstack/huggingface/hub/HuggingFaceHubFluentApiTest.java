@@ -89,5 +89,23 @@ final class HuggingFaceHubFluentApiTest {
             this.downloadRequest = request;
             return new DownloadResult(request.getTargetFile(), 0L);
         }
+
+        @Override
+        public com.aresstack.huggingface.hub.repo.RepositoryInfo createRepository(com.aresstack.huggingface.hub.repo.CreateRepositoryRequest request) {
+            return new com.aresstack.huggingface.hub.repo.RepositoryInfo(request.getRepoId(), request.getType(), null);
+        }
+
+        @Override
+        public void deleteRepository(com.aresstack.huggingface.hub.repo.DeleteRepositoryRequest request) {
+        }
+
+        @Override
+        public void updateRepositorySettings(com.aresstack.huggingface.hub.repo.UpdateRepositorySettingsRequest request) {
+        }
+
+        @Override
+        public com.aresstack.huggingface.hub.upload.CommitResult commit(com.aresstack.huggingface.hub.upload.CommitRequest request) {
+            return new com.aresstack.huggingface.hub.upload.CommitResult(null, null, null);
+        }
     }
 }

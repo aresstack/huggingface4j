@@ -11,8 +11,18 @@ import com.aresstack.huggingface.hub.model.ModelDetailsQuery;
 import com.aresstack.huggingface.hub.model.ModelSearchResult;
 import com.aresstack.huggingface.hub.query.HubQueryParameters;
 import com.aresstack.huggingface.hub.query.HubUrlBuilder;
+import com.aresstack.huggingface.hub.repo.CreateRepositoryRequest;
+import com.aresstack.huggingface.hub.repo.DeleteRepositoryRequest;
+import com.aresstack.huggingface.hub.repo.RepositoryInfo;
+import com.aresstack.huggingface.hub.repo.UpdateRepositorySettingsRequest;
+import com.aresstack.huggingface.hub.upload.CommitOperation;
+import com.aresstack.huggingface.hub.upload.CommitRequest;
+import com.aresstack.huggingface.hub.upload.CommitResult;
+import com.google.gson.JsonObject;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 
 public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
@@ -58,6 +68,108 @@ public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
         String path = "/" + request.getModelReference().getRepoId() + "/resolve/" + request.getRevision() + "/" + request.getFilePath();
         HubHttpRequest httpRequest = HubHttpRequest.get(HubUrlBuilder.path(path));
         return new com.aresstack.huggingface.hub.download.FileDownloader(httpClient).download(httpRequest, request);
+    }
+
+    @Override
+    public RepositoryInfo createRepository(CreateRepositoryRequest request) throws HuggingFaceHubException {
+        JsonObject body = new JsonObject();
+        body.addProperty("type", request.getType().value());
+        applyRepoName(body, request.getRepoId());
+        body.addProperty("private", request.isPrivateRepository());
+        HubHttpResponse response = execute(HubHttpRequest.postJson("/api/repos/create", body.toString()));
+        if (request.isExistsOk() && response.getStatusCode() == 409) {
+            return new RepositoryInfo(request.getRepoId(), request.getType(), null);
+        }
+        requireSuccess(response);
+        String url = mapper.createdRepositoryUrl(response.getBodyAsUtf8());
+        return new RepositoryInfo(request.getRepoId(), request.getType(), url);
+    }
+
+    @Override
+    public void deleteRepository(DeleteRepositoryRequest request) throws HuggingFaceHubException {
+        JsonObject body = new JsonObject();
+        body.addProperty("type", request.getType().value());
+        applyRepoName(body, request.getRepoId());
+        HubHttpResponse response = execute(HubHttpRequest.deleteJson("/api/repos/delete", body.toString()));
+        if (request.isMissingOk() && response.getStatusCode() == 404) {
+            return;
+        }
+        requireSuccess(response);
+    }
+
+    @Override
+    public void updateRepositorySettings(UpdateRepositorySettingsRequest request) throws HuggingFaceHubException {
+        JsonObject body = new JsonObject();
+        if (request.getPrivateRepository() != null) {
+            body.addProperty("private", request.getPrivateRepository());
+        }
+        if (request.getGated() != null) {
+            if ("false".equalsIgnoreCase(request.getGated())) {
+                body.addProperty("gated", false);
+            } else {
+                body.addProperty("gated", request.getGated());
+            }
+        }
+        String path = "/api/" + request.getType().apiNamespace() + HubUrlBuilder.path(request.getRepoId()) + "/settings";
+        requireSuccess(execute(HubHttpRequest.putJson(path, body.toString())));
+    }
+
+    @Override
+    public CommitResult commit(CommitRequest request) throws HuggingFaceHubException {
+        byte[] body = buildCommitBody(request);
+        String path = "/api/" + request.getType().apiNamespace()
+                + HubUrlBuilder.path(request.getRepoId()) + "/commit" + HubUrlBuilder.path(request.getRevision());
+        HubQueryParameters params = new HubQueryParameters();
+        if (request.isCreatePullRequest()) {
+            params.set("create_pr", "1");
+        }
+        path = HubUrlBuilder.appendQuery(path, params);
+        HubHttpResponse response = execute(HubHttpRequest.withBody("POST", path, body, "application/x-ndjson"));
+        requireSuccess(response);
+        return mapper.toCommitResult(response.getBodyAsUtf8());
+    }
+
+    private static byte[] buildCommitBody(CommitRequest request) throws HuggingFaceHubException {
+        StringBuilder ndjson = new StringBuilder();
+        JsonObject headerValue = new JsonObject();
+        headerValue.addProperty("summary", request.getSummary());
+        if (request.getDescription() != null) {
+            headerValue.addProperty("description", request.getDescription());
+        }
+        JsonObject header = new JsonObject();
+        header.addProperty("key", "header");
+        header.add("value", headerValue);
+        ndjson.append(header.toString()).append('\n');
+        try {
+            for (CommitOperation operation : request.getOperations()) {
+                JsonObject value = new JsonObject();
+                value.addProperty("path", operation.getPath());
+                JsonObject line = new JsonObject();
+                if (operation instanceof CommitOperation.AddedFile) {
+                    byte[] content = ((CommitOperation.AddedFile) operation).readContent();
+                    value.addProperty("content", Base64.getEncoder().encodeToString(content));
+                    value.addProperty("encoding", "base64");
+                    line.addProperty("key", "file");
+                } else {
+                    line.addProperty("key", "deletedFile");
+                }
+                line.add("value", value);
+                ndjson.append(line.toString()).append('\n');
+            }
+        } catch (IOException exception) {
+            throw new HuggingFaceHubException("Failed to read file content for commit.", exception);
+        }
+        return ndjson.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static void applyRepoName(JsonObject body, String repoId) {
+        int slash = repoId.indexOf('/');
+        if (slash > 0) {
+            body.addProperty("organization", repoId.substring(0, slash));
+            body.addProperty("name", repoId.substring(slash + 1));
+        } else {
+            body.addProperty("name", repoId);
+        }
     }
 
     private HubHttpResponse execute(HubHttpRequest request) throws HuggingFaceHubException {

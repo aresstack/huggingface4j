@@ -8,7 +8,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.ProtocolException;
 import java.net.URL;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class UrlConnectionHubHttpClient implements HubHttpClient {
@@ -30,7 +33,19 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
         HttpURLConnection connection = openFollowingRedirects(request, "application/json", 0L);
         int statusCode = connection.getResponseCode();
         InputStream inputStream = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
-        return new HubHttpResponse(statusCode, readFully(inputStream), connection.getContentType());
+        return new HubHttpResponse(statusCode, readFully(inputStream), connection.getContentType(), collectHeaders(connection));
+    }
+
+    private static Map<String, String> collectHeaders(HttpURLConnection connection) {
+        Map<String, String> headers = new LinkedHashMap<String, String>();
+        for (Map.Entry<String, List<String>> entry : connection.getHeaderFields().entrySet()) {
+            String key = entry.getKey();
+            List<String> values = entry.getValue();
+            if (key != null && values != null && !values.isEmpty()) {
+                headers.put(key, values.get(0));
+            }
+        }
+        return headers;
     }
 
     @Override
@@ -74,7 +89,7 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(60000);
-        connection.setRequestMethod(request.getMethod());
+        applyMethod(connection, request.getMethod());
         connection.setRequestProperty("Accept", accept);
         if (rangeStart > 0L) {
             connection.setRequestProperty("Range", "bytes=" + rangeStart + "-");
@@ -120,6 +135,21 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
     private static String firstHeader(HttpURLConnection connection, String first, String second) {
         String value = connection.getHeaderField(first);
         return value != null ? value : connection.getHeaderField(second);
+    }
+
+    private static void applyMethod(HttpURLConnection connection, String method) throws ProtocolException {
+        try {
+            connection.setRequestMethod(method);
+        } catch (ProtocolException exception) {
+            // HttpURLConnection does not allow PATCH directly; tunnel it through POST with an override
+            // header, which the Hugging Face Hub (and most servers/proxies) honour.
+            if ("PATCH".equals(method)) {
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("X-HTTP-Method-Override", "PATCH");
+            } else {
+                throw exception;
+            }
+        }
     }
 
     private static boolean isRedirect(int statusCode) {

@@ -59,6 +59,32 @@ erreichbar ist (unterschiedliche Host-Strings, um das Token-Stripping zu prüfen
 denen `localhost` ausschließlich auf IPv6 `::1` zeigt und der Test-Server nur an `127.0.0.1` gebunden
 ist, wird der Test per `Assumptions.assumeTrue(...)` **übersprungen statt rot**. Lokal lief er grün.
 
+## 6. Write-API (REST-WRITE-COVERAGE-1) – Umfang & Grenzen
+Umgesetzt sind **Repository Management** (create/delete/settings) und die **Upload/Commit-API**
+(Datei-Upload/-Delete, Multi-Operation-Commit, optional als Pull Request) inkl. der nötigen
+HTTP-Primitives (`postJson`/`putJson`/`patchJson`/`deleteJson`/`withBody`/`withHeader`, NDJSON-Body,
+typisierte Response-Header) und einer Safety-Gate für destruktive Deletes (`confirm(...)`).
+
+**Bekannte Grenze – Git-LFS:** Die Commit-API sendet Datei-Inhalte **inline als base64**. Das ist
+ideal für Text/kleine Binärdateien (Model Cards, Configs, Tokenizer), aber **nicht** für große bzw.
+LFS-getrackte Dateien (`*.safetensors`, `*.bin`, große `*.gguf` …). Dafür wäre das mehrstufige
+Git-LFS-Pre-Upload-Protokoll nötig (`/preupload`-Batch + S3-Upload + `lfsFile`-Operation). Das ist
+bewusst **noch nicht** implementiert; der Hub lehnt zu große Inline-Uploads ab. Folgepaket-Kandidat.
+
+**Nicht getestet gegen echtes HF:** Die Write-Endpunkte sind vollständig gegen einen lokalen
+`HttpServer` getestet (Pfade, Methoden, Bodies, Header, Fehler-Mapping, NDJSON-Aufbau), aber ein
+echter Schreibvorgang gegen huggingface.co braucht einen Write-Token und ein Wegwerf-Repo und wurde
+nicht ausgeführt. Die Annahmen über exakte Request-/Response-Felder (`/api/repos/create`,
+`/api/repos/delete`, `/api/{ns}/{id}/commit/{rev}`, `/api/{ns}/{id}/settings`) folgen dem Verhalten
+von `huggingface_hub`; einzelne Feldnamen könnten serverseitig abweichen.
+
+## 7. Restliche REST-Bereiche bewusst (noch) nicht abgedeckt
+Dieses Paket war auf **Repository Management + Upload/Commit** zugeschnitten. Weiterhin offen (laut
+priorisierter Roadmap aus dem Arbeitsauftrag) und damit Kandidaten für Folgepakete:
+Discussions/PRs (schreibend), Collections, Spaces-Management, Jobs, Webhooks,
+Orgs/Service-Accounts/SCIM, Inference-Endpoint-Management. Der erweiterte HTTP-Layer (JSON-Verben,
+Header, Bodies) bildet dafür bereits die Basis.
+
 ## 5. Bewusst nicht umgesetzt (als optional markiert)
 - **Binary-Compatibility-Gates (japicmp/revapi)**: vom Arbeitspaket als „optional/später“ markiert,
   bewusst nicht hinzugefügt, um den 0.1.0-Scope schlank zu halten.
