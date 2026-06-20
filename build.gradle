@@ -20,7 +20,7 @@ configurations {
 dependencies {
     api 'com.google.code.gson:gson:2.13.1'
 
-    openApiGenerator 'org.openapitools:openapi-generator-cli:7.14.0'
+    openApiGenerator 'org.openapitools:openapi-generator-cli:7.23.0'
 
     testImplementation platform('org.junit:junit-bom:5.10.0')
     testImplementation 'org.junit.jupiter:junit-jupiter'
