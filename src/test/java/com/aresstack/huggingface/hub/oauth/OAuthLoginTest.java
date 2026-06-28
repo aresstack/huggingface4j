@@ -161,5 +161,17 @@ final class OAuthLoginTest {
         public HubHttpStream openStream(HubHttpRequest request, long rangeStart) {
             throw new UnsupportedOperationException();
         }
+
+        @Override
+        public HubHttpResponse executeAbsolute(String url, String method, byte[] body, java.util.Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public HubHttpResponse uploadFile(String url, com.aresstack.huggingface.hub.upload.UploadSource source,
+                                          java.util.Map<String, String> headers, String repoPath,
+                                          com.aresstack.huggingface.hub.upload.UploadProgressListener listener) {
+            throw new UnsupportedOperationException();
+        }
     }
 }

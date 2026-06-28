@@ -59,24 +59,36 @@ erreichbar ist (unterschiedliche Host-Strings, um das Token-Stripping zu prüfen
 denen `localhost` ausschließlich auf IPv6 `::1` zeigt und der Test-Server nur an `127.0.0.1` gebunden
 ist, wird der Test per `Assumptions.assumeTrue(...)` **übersprungen statt rot**. Lokal lief er grün.
 
-## 6. Write-API (REST-WRITE-COVERAGE-1) – Umfang & Grenzen
-Umgesetzt sind **Repository Management** (create/delete/settings) und die **Upload/Commit-API**
-(Datei-Upload/-Delete, Multi-Operation-Commit, optional als Pull Request) inkl. der nötigen
-HTTP-Primitives (`postJson`/`putJson`/`patchJson`/`deleteJson`/`withBody`/`withHeader`, NDJSON-Body,
-typisierte Response-Header) und einer Safety-Gate für destruktive Deletes (`confirm(...)`).
+## 6. Write-API (REST-WRITE-COVERAGE-1 + -2) – Umfang & Grenzen
+Umgesetzt sind **Repository Management** (create/delete/settings), die **Upload/Commit-API**
+(Datei-Upload/-Delete, Multi-Operation-Commit, optional als Pull Request) und **Git-LFS-Upload** inkl.
+der nötigen HTTP-Primitives (`postJson`/`putJson`/`patchJson`/`deleteJson`/`withBody`/`withHeader`,
+NDJSON-Body, absolute Requests + Streaming-Upload, typisierte Response-Header) sowie einer Safety-Gate
+für destruktive Deletes (`confirm(...)`).
 
-**Bekannte Grenze – Git-LFS:** Die Commit-API sendet Datei-Inhalte **inline als base64**. Das ist
-ideal für Text/kleine Binärdateien (Model Cards, Configs, Tokenizer), aber **nicht** für große bzw.
-LFS-getrackte Dateien (`*.safetensors`, `*.bin`, große `*.gguf` …). Dafür wäre das mehrstufige
-Git-LFS-Pre-Upload-Protokoll nötig (`/preupload`-Batch + S3-Upload + `lfsFile`-Operation). Das ist
-bewusst **noch nicht** implementiert; der Hub lehnt zu große Inline-Uploads ab. Folgepaket-Kandidat.
+**Git-LFS (REST-WRITE-COVERAGE-2) – jetzt umgesetzt:** Kleine Dateien gehen weiterhin **inline als
+base64**; große bzw. LFS-typische Dateien (`*.safetensors`, `*.bin`, `*.gguf`, … oder ≥ `maxInlineBytes`,
+Default 10 MB) gehen über den **Git-LFS-Batch (`basic` transfer)**: SHA-256/Größe berechnen →
+`/{repo}.git/info/lfs/objects/batch` → Datei **gestreamt** per `PUT` zur zurückgegebenen Storage-URL
+(ohne HF-Token) → optionaler `verify`-Call → Commit referenziert das Objekt als `lfsFile`. Auto/`.lfs()`/
+`.smallFileOnly()`/`maxInlineBytes(...)` steuern die Entscheidung; Progress + `UploadResult`
+(size/sha256/lfs/commit) sind vorhanden.
 
-**Nicht getestet gegen echtes HF:** Die Write-Endpunkte sind vollständig gegen einen lokalen
-`HttpServer` getestet (Pfade, Methoden, Bodies, Header, Fehler-Mapping, NDJSON-Aufbau), aber ein
-echter Schreibvorgang gegen huggingface.co braucht einen Write-Token und ein Wegwerf-Repo und wurde
-nicht ausgeführt. Die Annahmen über exakte Request-/Response-Felder (`/api/repos/create`,
-`/api/repos/delete`, `/api/{ns}/{id}/commit/{rev}`, `/api/{ns}/{id}/settings`) folgen dem Verhalten
-von `huggingface_hub`; einzelne Feldnamen könnten serverseitig abweichen.
+**Verbleibende LFS-Grenze – Multipart:** Nur der `basic`-Single-`PUT`-Transfer ist implementiert. Der
+**multipart**-Transfer für sehr große Einzelobjekte (mehrere GB, chunked) wird **noch nicht**
+ausgehandelt (im Batch wird nur `transfers:["basic"]` angeboten). Für die übergroße Mehrzahl an
+Modell-/Datei-Größen reicht `basic`; multi-GB-Einzeldateien sind ein Folgepaket-Kandidat. Ebenso
+nicht implementiert: lokale Dedup gegen bereits vorhandene Objekte über `/preupload` (wir verlassen uns
+auf die `actions`-losen Batch-Antworten des Hubs, die genau das bereits abdecken).
+
+**Nicht getestet gegen echtes HF:** Sämtliche Write-/LFS-Endpunkte sind vollständig gegen einen lokalen
+`HttpServer` getestet (Pfade, Methoden, Bodies, Header, Fehler-Mapping, NDJSON-Aufbau, LFS-Batch +
+Streaming-Upload + Verify + `lfsFile`-Referenz + „Objekt existiert bereits“), aber ein echter
+Schreibvorgang gegen huggingface.co braucht einen Write-Token und ein Wegwerf-Repo und wurde nicht
+ausgeführt. Die Annahmen über exakte Request-/Response-Felder (`/api/repos/create`, `/api/repos/delete`,
+`/api/{ns}/{id}/commit/{rev}`, `/api/{ns}/{id}/settings`, `/{repo}.git/info/lfs/objects/batch`) folgen
+dem Verhalten von `huggingface_hub`/der Git-LFS-Batch-Spezifikation; einzelne Feldnamen könnten
+serverseitig abweichen.
 
 ## 7. Restliche REST-Bereiche bewusst (noch) nicht abgedeckt
 Dieses Paket war auf **Repository Management + Upload/Commit** zugeschnitten. Weiterhin offen (laut

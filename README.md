@@ -5,7 +5,8 @@ with an [ollama4j](https://github.com/ollama4j/ollama4j)-style fluent API.
 
 - Model search, model details and file listing
 - Robust single-file and snapshot downloads (temp file + atomic move, resume, checksum verification)
-- Repository management and uploads: create/delete/settings, plus file upload/delete via the commit API
+- Repository management and uploads: create/delete/settings, plus file upload/delete via the commit
+  API, including automatic Git-LFS transfer for large model files
 - Token authentication (static, environment, custom provider) and OAuth browser login
 - Only one runtime dependency: Gson
 
@@ -191,9 +192,50 @@ CommitResult commit = hub.repositories()
 System.out.println(commit.getCommitUrl());
 ```
 
-> **Note:** file contents are sent inline (base64) in the commit request. This is ideal for text and
-> small binary files (model cards, configs, tokenizers). Very large / LFS-tracked files require the
-> Git-LFS pre-upload protocol, which is not implemented yet — see `problems.md`.
+### Large files and Git-LFS
+
+`uploadFile(...)` automatically decides between an inline (base64) commit and a Git-LFS transfer:
+files at or above the inline threshold (10 MB by default) or with a typical weight extension
+(`.safetensors`, `.bin`, `.gguf`, `.onnx`, `.pt`, `.pth`, …) go through LFS. Large files are streamed
+to LFS storage rather than buffered as base64, with progress reporting.
+
+```java
+UploadResult result = hub.repositories()
+        .model("aresstack/my-model")
+        .uploadFile(Paths.get("model.safetensors"))
+        .to("model.safetensors")
+        .commitMessage("Upload model weights")
+        .onProgress(p -> System.out.println(p.getPercent() + "%"))
+        .execute();
+
+System.out.println("LFS: " + result.isLfs() + " sha256=" + result.getSha256());
+```
+
+Override the automatic decision when needed:
+
+```java
+// Force LFS (e.g. a file the default heuristics would treat as small)
+hub.repositories().model("aresstack/my-model")
+        .uploadFile(Paths.get("model.gguf")).to("model.gguf").lfs()
+        .commitMessage("Upload GGUF model").execute();
+
+// Force inline (fail-fast for things that must stay tiny)
+hub.repositories().model("aresstack/my-model")
+        .uploadFile(Paths.get("config.json")).to("config.json").smallFileOnly()
+        .commitMessage("Upload config").execute();
+
+// Tune the inline threshold
+hub.repositories().model("aresstack/my-model")
+        .uploadFile(localFile).to("data.parquet").maxInlineBytes(1_000_000L)
+        .commitMessage("Upload data").execute();
+```
+
+`UploadResult` reports `getSize()`, `getSha256()`, `isLfs()` and the commit fields
+(`getCommitOid()`, `getCommitUrl()`, `getPullRequestUrl()`).
+
+> **LFS scope:** the Git-LFS *basic* transfer (single streamed `PUT`) is implemented, which covers the
+> vast majority of model and dataset files. Chunked *multipart* transfers for very large objects
+> (multi-GB single files) are not implemented yet — see `problems.md`.
 
 Deletion is guarded: `delete(...).execute()` throws unless you confirm with the exact repository id
 via `confirm("org/name")` (or `confirmDestructiveAction()`), so a repository can never be removed by
@@ -297,6 +339,8 @@ Optional: regenerate the Hugging Face OpenAPI DTOs (not part of the public API):
 - Snapshot/repository download with allow/ignore glob patterns.
 - Repository write API: create/delete/settings, file upload/delete and multi-operation commits
   (with optional pull request), plus guarded, confirmation-gated repository deletion.
+- Automatic small-vs-LFS upload decision with streamed Git-LFS basic transfer, progress reporting and
+  `UploadResult` (size, SHA-256, LFS flag, commit info).
 - HTTP layer with JSON `POST`/`PUT`/`PATCH`/`DELETE`, NDJSON bodies and typed response headers.
 - `Authorization` header restricted to the Hub host across redirects.
 - Java 8 target; published to Maven Central with sources and Javadoc.

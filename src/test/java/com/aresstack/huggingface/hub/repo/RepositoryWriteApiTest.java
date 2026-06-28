@@ -109,7 +109,7 @@ final class RepositoryWriteApiTest {
         recorder.respond("/api/models/aresstack/my-model/commit/main", 200,
                 "{\"commitOid\":\"abc123\",\"commitUrl\":\"https://huggingface.co/aresstack/my-model/commit/abc123\"}");
 
-        CommitResult result = hub.repositories()
+        com.aresstack.huggingface.hub.upload.UploadResult result = hub.repositories()
                 .model("aresstack/my-model")
                 .uploadContent("hello".getBytes(StandardCharsets.UTF_8))
                 .to("config.json")
@@ -127,6 +127,8 @@ final class RepositoryWriteApiTest {
         assertTrue(lines[1].contains("\"path\":\"config.json\""), lines[1]);
         assertTrue(lines[1].contains("\"" + Base64.getEncoder().encodeToString("hello".getBytes(StandardCharsets.UTF_8)) + "\""), lines[1]);
         assertEquals("abc123", result.getCommitOid());
+        assertEquals(false, result.isLfs());
+        assertEquals(5L, result.getSize());
     }
 
     @Test

@@ -23,6 +23,8 @@ public final class CommitRequest {
     private String summary;
     private String description;
     private boolean createPullRequest;
+    private long maxInlineBytes = UploadClassifier.DEFAULT_MAX_INLINE_BYTES;
+    private UploadProgressListener progressListener;
 
     public CommitRequest(HuggingFaceHubClient client, String repoId, RepositoryType type) {
         if (repoId == null || repoId.trim().isEmpty()) {
@@ -34,25 +36,53 @@ public final class CommitRequest {
     }
 
     public CommitRequest addFile(String repoPath, byte[] content) {
-        operations.add(CommitOperation.addFile(repoPath, content));
-        return this;
+        return operation(CommitOperation.addFile(repoPath, content));
     }
 
     public CommitRequest addFile(String repoPath, Path localFile) {
-        operations.add(CommitOperation.addFile(repoPath, localFile));
-        return this;
+        return operation(CommitOperation.addFile(repoPath, localFile));
+    }
+
+    public CommitRequest addFile(String repoPath, byte[] content, UploadMode mode) {
+        return operation(CommitOperation.addFile(repoPath, content, mode));
+    }
+
+    public CommitRequest addFile(String repoPath, Path localFile, UploadMode mode) {
+        return operation(CommitOperation.addFile(repoPath, localFile, mode));
     }
 
     public CommitRequest deleteFile(String repoPath) {
-        operations.add(CommitOperation.deleteFile(repoPath));
-        return this;
+        return operation(CommitOperation.deleteFile(repoPath));
     }
 
     public CommitRequest operation(CommitOperation operation) {
         if (operation != null) {
+            if (operation instanceof CommitOperation.AddedFile) {
+                ((CommitOperation.AddedFile) operation).maxInlineBytes(maxInlineBytes);
+            }
             operations.add(operation);
         }
         return this;
+    }
+
+    /** Files at or above this size use Git-LFS in {@link UploadMode#AUTO}. */
+    public CommitRequest maxInlineBytes(long maxInlineBytes) {
+        this.maxInlineBytes = maxInlineBytes;
+        for (CommitOperation operation : operations) {
+            if (operation instanceof CommitOperation.AddedFile) {
+                ((CommitOperation.AddedFile) operation).maxInlineBytes(maxInlineBytes);
+            }
+        }
+        return this;
+    }
+
+    public CommitRequest onProgress(UploadProgressListener progressListener) {
+        this.progressListener = progressListener;
+        return this;
+    }
+
+    public UploadProgressListener getProgressListener() {
+        return progressListener;
     }
 
     public CommitRequest revision(String revision) {

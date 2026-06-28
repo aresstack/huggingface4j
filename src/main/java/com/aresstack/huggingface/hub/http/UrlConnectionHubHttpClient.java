@@ -67,6 +67,74 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
                 connection.getURL().toString(), partial, body);
     }
 
+    @Override
+    public HubHttpResponse executeAbsolute(String url, String method, byte[] body, Map<String, String> headers) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(60000);
+        applyMethod(connection, method);
+        if (headers != null) {
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            }
+        }
+        if (body != null && body.length > 0) {
+            connection.setDoOutput(true);
+            OutputStream outputStream = connection.getOutputStream();
+            try {
+                outputStream.write(body);
+            } finally {
+                outputStream.close();
+            }
+        }
+        int statusCode = connection.getResponseCode();
+        InputStream inputStream = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
+        return new HubHttpResponse(statusCode, readFully(inputStream), connection.getContentType(), collectHeaders(connection));
+    }
+
+    @Override
+    public HubHttpResponse uploadFile(String url, com.aresstack.huggingface.hub.upload.UploadSource source,
+                                      Map<String, String> headers, String repoPath,
+                                      com.aresstack.huggingface.hub.upload.UploadProgressListener listener) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(0);
+        connection.setRequestMethod("PUT");
+        if (headers != null) {
+            for (Map.Entry<String, String> header : headers.entrySet()) {
+                connection.setRequestProperty(header.getKey(), header.getValue());
+            }
+        }
+        long length = source.length();
+        connection.setFixedLengthStreamingMode(length);
+        connection.setDoOutput(true);
+        InputStream input = source.openStream();
+        try {
+            OutputStream output = connection.getOutputStream();
+            try {
+                byte[] chunk = new byte[1024 * 1024];
+                long uploaded = 0L;
+                int read;
+                while ((read = input.read(chunk)) >= 0) {
+                    output.write(chunk, 0, read);
+                    uploaded += read;
+                    if (listener != null) {
+                        listener.onProgress(new com.aresstack.huggingface.hub.upload.UploadProgress(repoPath, uploaded, length));
+                    }
+                }
+            } finally {
+                output.close();
+            }
+        } finally {
+            input.close();
+        }
+        int statusCode = connection.getResponseCode();
+        InputStream responseStream = statusCode >= 400 ? connection.getErrorStream() : connection.getInputStream();
+        return new HubHttpResponse(statusCode, readFully(responseStream), connection.getContentType(), collectHeaders(connection));
+    }
+
     private HttpURLConnection openFollowingRedirects(HubHttpRequest request, String accept, long rangeStart) throws IOException {
         URL url = new URL(endpoint + request.getPathAndQuery());
         for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {

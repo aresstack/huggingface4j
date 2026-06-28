@@ -22,8 +22,11 @@ import com.google.gson.JsonObject;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
 
@@ -116,7 +119,11 @@ public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
 
     @Override
     public CommitResult commit(CommitRequest request) throws HuggingFaceHubException {
-        byte[] body = buildCommitBody(request);
+        Set<CommitOperation.AddedFile> lfsFiles = classifyLfsFiles(request);
+        new LfsUploadService(httpClient).upload(request.getRepoId(), request.getType(),
+                new ArrayList<CommitOperation.AddedFile>(lfsFiles), request.getProgressListener());
+
+        byte[] body = buildCommitBody(request, lfsFiles);
         String path = "/api/" + request.getType().apiNamespace()
                 + HubUrlBuilder.path(request.getRepoId()) + "/commit" + HubUrlBuilder.path(request.getRevision());
         HubQueryParameters params = new HubQueryParameters();
@@ -129,7 +136,21 @@ public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
         return mapper.toCommitResult(response.getBodyAsUtf8());
     }
 
-    private static byte[] buildCommitBody(CommitRequest request) throws HuggingFaceHubException {
+    private static Set<CommitOperation.AddedFile> classifyLfsFiles(CommitRequest request) throws HuggingFaceHubException {
+        Set<CommitOperation.AddedFile> lfsFiles = new LinkedHashSet<CommitOperation.AddedFile>();
+        try {
+            for (CommitOperation operation : request.getOperations()) {
+                if (operation instanceof CommitOperation.AddedFile && ((CommitOperation.AddedFile) operation).isLfs()) {
+                    lfsFiles.add((CommitOperation.AddedFile) operation);
+                }
+            }
+        } catch (IOException exception) {
+            throw new HuggingFaceHubException("Failed to inspect file for commit.", exception);
+        }
+        return lfsFiles;
+    }
+
+    private static byte[] buildCommitBody(CommitRequest request, Set<CommitOperation.AddedFile> lfsFiles) throws HuggingFaceHubException {
         StringBuilder ndjson = new StringBuilder();
         JsonObject headerValue = new JsonObject();
         headerValue.addProperty("summary", request.getSummary());
@@ -146,10 +167,17 @@ public final class DefaultHuggingFaceHubClient implements HuggingFaceHubClient {
                 value.addProperty("path", operation.getPath());
                 JsonObject line = new JsonObject();
                 if (operation instanceof CommitOperation.AddedFile) {
-                    byte[] content = ((CommitOperation.AddedFile) operation).readContent();
-                    value.addProperty("content", Base64.getEncoder().encodeToString(content));
-                    value.addProperty("encoding", "base64");
-                    line.addProperty("key", "file");
+                    CommitOperation.AddedFile file = (CommitOperation.AddedFile) operation;
+                    if (lfsFiles.contains(file)) {
+                        value.addProperty("algo", "sha256");
+                        value.addProperty("oid", file.sha256Hex());
+                        value.addProperty("size", file.length());
+                        line.addProperty("key", "lfsFile");
+                    } else {
+                        value.addProperty("content", Base64.getEncoder().encodeToString(file.readContent()));
+                        value.addProperty("encoding", "base64");
+                        line.addProperty("key", "file");
+                    }
                 } else {
                     line.addProperty("key", "deletedFile");
                 }
