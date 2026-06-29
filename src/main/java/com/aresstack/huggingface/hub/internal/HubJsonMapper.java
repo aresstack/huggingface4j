@@ -13,7 +13,7 @@ import com.google.gson.JsonParser;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class HubJsonMapper {
+final class HubJsonMapper {
 
     public com.aresstack.huggingface.hub.account.UserProfile toUserProfile(String json) throws HuggingFaceHubException {
         JsonObject root = parse(json).getAsJsonObject();

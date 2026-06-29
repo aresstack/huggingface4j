@@ -15,6 +15,14 @@ import com.aresstack.huggingface.hub.upload.CommitResult;
 
 import java.util.List;
 
+/**
+ * The low-level transport-agnostic contract behind {@link HuggingFaceHub}.
+ *
+ * <p>Most users go through the fluent {@code HuggingFaceHub.models()/account()/repositories()} API
+ * rather than calling this directly. Implement it (and supply it via
+ * {@code HuggingFaceHub.standard().client(...)}) to fully customise transport or for testing. The
+ * default implementation lives in the internal package.</p>
+ */
 public interface HuggingFaceHubClient {
 
     UserProfile whoAmI() throws HuggingFaceHubException;

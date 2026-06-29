@@ -15,13 +15,13 @@ treated as transport DTOs only and are not part of the ergonomic public API.
 
 ## Installation
 
-Coordinates: `io.github.aresstack:huggingface4j:0.1.0`
+Coordinates: `com.aresstack:huggingface4j:0.1.0`
 
 ### Maven
 
 ```xml
 <dependency>
-    <groupId>io.github.aresstack</groupId>
+    <groupId>com.aresstack</groupId>
     <artifactId>huggingface4j</artifactId>
     <version>0.1.0</version>
 </dependency>
@@ -30,7 +30,7 @@ Coordinates: `io.github.aresstack:huggingface4j:0.1.0`
 ### Gradle
 
 ```groovy
-implementation 'io.github.aresstack:huggingface4j:0.1.0'
+implementation 'com.aresstack:huggingface4j:0.1.0'
 ```
 
 ## Authentication
@@ -233,9 +233,17 @@ hub.repositories().model("aresstack/my-model")
 `UploadResult` reports `getSize()`, `getSha256()`, `isLfs()` and the commit fields
 (`getCommitOid()`, `getCommitUrl()`, `getPullRequestUrl()`).
 
-> **LFS scope:** the Git-LFS *basic* transfer (single streamed `PUT`) is implemented, which covers the
-> vast majority of model and dataset files. Chunked *multipart* transfers for very large objects
-> (multi-GB single files) are not implemented yet — see `problems.md`.
+**Git-LFS support:**
+
+| Supported | Not supported (yet) |
+|-----------|---------------------|
+| ✅ basic single-`PUT` transfer | ❌ multipart / chunked multi-GB transfer |
+| ✅ SHA-256 oid + size negotiation | ❌ parallel LFS uploads |
+| ✅ `verify` action when the Hub returns one | ❌ retry / backoff across `PUT` attempts |
+| ✅ dedup (skips objects the Hub already has) | |
+
+This covers the vast majority of model and dataset files. See [ROADMAP.md](ROADMAP.md) for the
+multipart follow-up.
 
 Deletion is guarded: `delete(...).execute()` throws unless you confirm with the exact repository id
 via `confirm("org/name")` (or `confirmDestructiveAction()`), so a repository can never be removed by
@@ -308,9 +316,10 @@ huggingface4j to find and download a model, and an inference runtime to run it.
 ## API status and stability
 
 `0.1.x` is an early release. The hand-written public API surface (`HuggingFaceHub`, the fluent
-`models()` / `account()` builders, the `download` and `oauth` packages, and `HuggingFaceHubException`)
-is what we intend to keep stable. Classes under `...hub.internal` are implementation details and may
-change without notice. Binary-compatibility tooling (japicmp/revapi) is planned for a later release.
+`models()` / `account()` / `repositories()` builders, and the `download`, `upload`, `repo` and `oauth`
+packages, plus `HuggingFaceHubException`) is what we intend to keep stable. Classes under
+`com.aresstack.huggingface.hub.internal` are implementation details and may change without notice.
+The full plan and known limitations are in [ROADMAP.md](ROADMAP.md) and [problems.md](problems.md).
 
 ## Building from source
 
@@ -325,25 +334,24 @@ Optional: regenerate the Hugging Face OpenAPI DTOs (not part of the public API):
 ./gradlew generateHuggingFaceOpenApiModels
 ```
 
-## Release notes
+## Documentation map
 
-### 0.1.0
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) — what's in each version.
+- [ROADMAP.md](ROADMAP.md) — planned features and cross-cutting work.
+- [PUBLISHING.md](PUBLISHING.md) — Maven Central release runbook and required secrets.
+- [problems.md](problems.md) — known limitations.
 
-- Initial release.
-- Anonymous, static-token, environment-token and custom token-provider authentication.
-- OAuth device-code browser login with bounded, cancelable polling and typed error handling.
-- Fluent model search with common filters and a query-parameter escape hatch.
-- Model details and file listing via Gson mapping.
-- Robust downloads: streaming to a temp file, atomic move, resume, overwrite policy, and optional
-  size/SHA-256 verification; typed HTTP error mapping.
-- Snapshot/repository download with allow/ignore glob patterns.
-- Repository write API: create/delete/settings, file upload/delete and multi-operation commits
-  (with optional pull request), plus guarded, confirmation-gated repository deletion.
-- Automatic small-vs-LFS upload decision with streamed Git-LFS basic transfer, progress reporting and
-  `UploadResult` (size, SHA-256, LFS flag, commit info).
-- HTTP layer with JSON `POST`/`PUT`/`PATCH`/`DELETE`, NDJSON bodies and typed response headers.
-- `Authorization` header restricted to the Hub host across redirects.
-- Java 8 target; published to Maven Central with sources and Javadoc.
+## Running the optional manual integration tests
+
+These hit the real Hub and are skipped unless their token is present:
+
+```bash
+# Read-only flows (whoAmI, search, public download, gated read)
+HF_TOKEN=hf_read_token ./gradlew test --tests '*ManualIntegrationTest'
+
+# Full write lifecycle on a disposable repo (needs a WRITE token)
+HF_TOKEN_WRITE=hf_write_token ./gradlew test --tests '*WriteLifecycleManualTest'
+```
 
 ## License
 

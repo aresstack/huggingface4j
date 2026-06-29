@@ -1,104 +1,44 @@
-# Offene Punkte / Entscheidungen, die nicht rein aus dem Code lösbar sind
+# Known problems and limitations
 
-Diese Datei dokumentiert die Stellen, an denen ich auf externe Accounts, Secrets oder bewusste
-Design-Entscheidungen gestoßen bin. Der Code ist überall so weit implementiert, dass nur noch die
-manuellen/infrastrukturellen Schritte fehlen.
+This file tracks only genuine open issues and limitations of the current code. Release mechanics live
+in [PUBLISHING.md](PUBLISHING.md); future feature work lives in [ROADMAP.md](ROADMAP.md).
 
-## 1. Maven Central / Central Portal – manuelle, externe Schritte
-Folgende Schritte lassen sich grundsätzlich **nicht** aus dem Repository heraus ausführen, weil sie
-externe Accounts und Geheimnisse erfordern. Der Build ist aber vollständig darauf vorbereitet:
+## Git-LFS: basic transfer only
+Large/weight files upload via the Git-LFS **basic** single-`PUT` transfer. Not implemented:
+- **multipart/chunked** transfer for very large single objects (multi-GB),
+- **parallel** LFS uploads of multiple objects,
+- **retry/backoff** across repeated `PUT` attempts on a flaky upload.
 
-- **Namespace `io.github.aresstack` im Central Portal verifizieren** – setzt voraus, dass der
-  GitHub-User/die Org `aresstack` existiert und im Central Portal als Namespace bestätigt wird.
-- **Publishing-Token erzeugen** (Central Portal → User Token) → als Secrets `CENTRAL_USERNAME` /
-  `CENTRAL_PASSWORD` hinterlegen.
-- **GPG-Key erzeugen** (`gpg --gen-key`, dann ASCII-armored Private Key exportieren) → als Secrets
-  `SIGNING_KEY` (armored Key) / `SIGNING_PASSWORD` hinterlegen.
-- **GitHub-Secrets setzen**: `CENTRAL_USERNAME`, `CENTRAL_PASSWORD`, `SIGNING_KEY`, `SIGNING_PASSWORD`.
-- **Tatsächliches Release**: Tag `v0.1.0` pushen → `release.yml` lädt die signierten Artefakte in das
-  Staging-Repo des Central Portals hoch.
+For the vast majority of model/dataset file sizes the basic transfer is sufficient. Multipart is the
+main follow-up (see ROADMAP).
 
-Im Build umgesetzt: `signing`-Plugin mit In-Memory-PGP, bedingtes Signieren (lokaler Build/Tests
-laufen ohne Key weiter), Publishing-Repository auf die **OSSRH Staging API** des Central Portals
-(`https://ossrh-staging-api.central.sonatype.com/...`), Version `0.1.0`, Sources-/Javadoc-JARs,
-`publishToMavenLocal` lokal validiert.
+## Write path not exercised against the real Hub in CI
+All write/LFS endpoints are covered by tests against a local `HttpServer` (paths, methods, JSON/NDJSON
+bodies, headers, error mapping, the LFS batch + streamed upload + verify + `lfsFile` reference, and the
+"object already exists" case). A real write against huggingface.co needs a write token and a disposable
+repo and is therefore an **optional manual test** (`HuggingFaceHubWriteLifecycleManualTest`, enabled
+only when `HF_TOKEN_WRITE` is set), not a mandatory CI test. The exact request/response field names for
+`/api/repos/create`, `/api/repos/delete`, `/api/{ns}/{id}/commit/{rev}`, `/api/{ns}/{id}/settings` and
+`/{repo}.git/info/lfs/objects/batch` follow the behaviour of `huggingface_hub` and the Git-LFS batch
+spec; individual field names could differ server-side and should be confirmed with the manual test
+before release.
 
-### Bewusste Entscheidung: Publishing-Mechanismus
-Ich habe **bewusst** den eingebauten `maven-publish` + `signing`-Weg auf die OSSRH-kompatible
-Staging-API gewählt statt eines Drittanbieter-Plugins (z. B. `com.vanniktech.maven.publish` oder das
-offizielle `central-publishing`-Plugin). Grund: kein zusätzlicher Plugin-Resolve, hermetischer Build,
-keine Überraschungen bei eingeschränkter Netzwerkumgebung. **Einschränkung:** Über die Staging-API
-landet das Deployment zunächst in einem *Staging-Repository*; das finale „Publish/Release“ im Central
-Portal muss ggf. noch (einmalig in der UI oder per Portal-API) bestätigt bzw. auf Auto-Publish gestellt
-werden. Wer ein vollständig automatisiertes Release will, kann später auf das vanniktech-Plugin
-(`SonatypeHost.CENTRAL_PORTAL`, `automaticRelease = true`) umstellen.
+## Release build (Maven) not run locally
+The Maven Central release runs from `pom.xml` (`mvn -B clean deploy`) via the
+`central-publishing-maven-plugin`, mirroring `aresstack/win-proxy-java`. Maven is not installed in this
+environment, so the `pom.xml` was validated by mirroring the proven sibling project and by building the
+same sources with Gradle, not by running `mvn` locally. GPG signing has likewise not been exercised
+against a real key here. Run `mvn -B clean verify -Dgpg.skip=true` (and a full `mvn deploy` from CI with
+the secrets) to confirm before/at the first release — see PUBLISHING.md.
 
-### Nicht verifizierbar ohne echten Key
-Die Signatur-Konfiguration ist verdrahtet, konnte aber lokal **nicht gegen einen echten GPG-Key
-getestet** werden (kein Key vorhanden). `publishToMavenLocal` (ohne Signatur) wurde erfolgreich
-ausgeführt.
+## Environment-dependent test
+`UrlConnectionHubHttpClientTest.stripsAuthorizationOnCrossHostRedirect` needs `localhost` to be
+reachable in addition to `127.0.0.1` (two different host strings, to prove the token is not forwarded
+across hosts). On machines where `localhost` resolves only to IPv6 `::1` while the test server binds to
+`127.0.0.1`, the test is **skipped** (via `Assumptions`) rather than failing.
 
-## 2. Exception-Modell: checked beibehalten
-Das Arbeitspaket bat um eine Entscheidung „checked vs. runtime“. Ich habe `HuggingFaceHubException`
-**bewusst als checked Exception belassen**, weil es die bereits etablierte öffentliche API ist und ein
-Wechsel auf Runtime-Exceptions ein größerer Breaking Change wäre, der zu 0.1.0 nicht nötig ist. Die
-HTTP-Fehlerabbildung wurde stattdessen vereinheitlicht (`HuggingFaceHubException.forStatus(...)`) und
-um typisierte Subklassen (401/403/404/429 + generisch) erweitert.
-
-## 3. OAuth-Integrationstest ist nur „happy path“ automatisierbar
-Ein echter End-to-End-OAuth-Login erfordert **menschliche Interaktion** (Browser-Bestätigung) und
-lässt sich daher nicht sinnvoll als automatischer Test gegen echtes HF ausführen. Abgedeckt sind:
-- Vollständige Unit-Tests für `authorization_pending`, `slow_down`, `access_denied`, `expired_token`,
-  Deadline/Timeout und Cancel (`OAuthLoginTest`).
-- Der manuelle Integrationstest (`HuggingFaceHubManualIntegrationTest`, nur mit `HF_TOKEN`) deckt
-  whoAmI, Suche, Download und gated-Repo-Verhalten ab – nicht den interaktiven OAuth-Flow.
-
-## 4. Cross-Host-Redirect-Test ist umgebungsabhängig
-`stripsAuthorizationOnCrossHostRedirect` braucht, dass `localhost` zusätzlich zu `127.0.0.1`
-erreichbar ist (unterschiedliche Host-Strings, um das Token-Stripping zu prüfen). Auf Systemen, auf
-denen `localhost` ausschließlich auf IPv6 `::1` zeigt und der Test-Server nur an `127.0.0.1` gebunden
-ist, wird der Test per `Assumptions.assumeTrue(...)` **übersprungen statt rot**. Lokal lief er grün.
-
-## 6. Write-API (REST-WRITE-COVERAGE-1 + -2) – Umfang & Grenzen
-Umgesetzt sind **Repository Management** (create/delete/settings), die **Upload/Commit-API**
-(Datei-Upload/-Delete, Multi-Operation-Commit, optional als Pull Request) und **Git-LFS-Upload** inkl.
-der nötigen HTTP-Primitives (`postJson`/`putJson`/`patchJson`/`deleteJson`/`withBody`/`withHeader`,
-NDJSON-Body, absolute Requests + Streaming-Upload, typisierte Response-Header) sowie einer Safety-Gate
-für destruktive Deletes (`confirm(...)`).
-
-**Git-LFS (REST-WRITE-COVERAGE-2) – jetzt umgesetzt:** Kleine Dateien gehen weiterhin **inline als
-base64**; große bzw. LFS-typische Dateien (`*.safetensors`, `*.bin`, `*.gguf`, … oder ≥ `maxInlineBytes`,
-Default 10 MB) gehen über den **Git-LFS-Batch (`basic` transfer)**: SHA-256/Größe berechnen →
-`/{repo}.git/info/lfs/objects/batch` → Datei **gestreamt** per `PUT` zur zurückgegebenen Storage-URL
-(ohne HF-Token) → optionaler `verify`-Call → Commit referenziert das Objekt als `lfsFile`. Auto/`.lfs()`/
-`.smallFileOnly()`/`maxInlineBytes(...)` steuern die Entscheidung; Progress + `UploadResult`
-(size/sha256/lfs/commit) sind vorhanden.
-
-**Verbleibende LFS-Grenze – Multipart:** Nur der `basic`-Single-`PUT`-Transfer ist implementiert. Der
-**multipart**-Transfer für sehr große Einzelobjekte (mehrere GB, chunked) wird **noch nicht**
-ausgehandelt (im Batch wird nur `transfers:["basic"]` angeboten). Für die übergroße Mehrzahl an
-Modell-/Datei-Größen reicht `basic`; multi-GB-Einzeldateien sind ein Folgepaket-Kandidat. Ebenso
-nicht implementiert: lokale Dedup gegen bereits vorhandene Objekte über `/preupload` (wir verlassen uns
-auf die `actions`-losen Batch-Antworten des Hubs, die genau das bereits abdecken).
-
-**Nicht getestet gegen echtes HF:** Sämtliche Write-/LFS-Endpunkte sind vollständig gegen einen lokalen
-`HttpServer` getestet (Pfade, Methoden, Bodies, Header, Fehler-Mapping, NDJSON-Aufbau, LFS-Batch +
-Streaming-Upload + Verify + `lfsFile`-Referenz + „Objekt existiert bereits“), aber ein echter
-Schreibvorgang gegen huggingface.co braucht einen Write-Token und ein Wegwerf-Repo und wurde nicht
-ausgeführt. Die Annahmen über exakte Request-/Response-Felder (`/api/repos/create`, `/api/repos/delete`,
-`/api/{ns}/{id}/commit/{rev}`, `/api/{ns}/{id}/settings`, `/{repo}.git/info/lfs/objects/batch`) folgen
-dem Verhalten von `huggingface_hub`/der Git-LFS-Batch-Spezifikation; einzelne Feldnamen könnten
-serverseitig abweichen.
-
-## 7. Restliche REST-Bereiche bewusst (noch) nicht abgedeckt
-Dieses Paket war auf **Repository Management + Upload/Commit** zugeschnitten. Weiterhin offen (laut
-priorisierter Roadmap aus dem Arbeitsauftrag) und damit Kandidaten für Folgepakete:
-Discussions/PRs (schreibend), Collections, Spaces-Management, Jobs, Webhooks,
-Orgs/Service-Accounts/SCIM, Inference-Endpoint-Management. Der erweiterte HTTP-Layer (JSON-Verben,
-Header, Bodies) bildet dafür bereits die Basis.
-
-## 5. Bewusst nicht umgesetzt (als optional markiert)
-- **Binary-Compatibility-Gates (japicmp/revapi)**: vom Arbeitspaket als „optional/später“ markiert,
-  bewusst nicht hinzugefügt, um den 0.1.0-Scope schlank zu halten.
-- **OpenAPI-DTO-Generierung** bleibt wie gehabt ein separater, manueller Gradle-Task und ist nicht
-  Teil der öffentlichen API.
+## Deliberate design decision: checked exceptions
+`HuggingFaceHubException` is a checked exception and stays that way for `0.1.x`. Switching to runtime
+exceptions would be a larger breaking change that is not warranted for the first release. HTTP failures
+are mapped to typed subclasses (`Unauthorized`/`Forbidden`/`NotFound`/`RateLimited` + generic
+`Response`) via `HuggingFaceHubException.forStatus(...)`.

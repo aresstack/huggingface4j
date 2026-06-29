@@ -1,10 +1,12 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
-    id 'signing'
 }
 
-group = 'io.github.aresstack'
+// Gradle is used for development, tests and local installs (publishToMavenLocal).
+// The Maven Central release is performed from pom.xml via the central-publishing-maven-plugin
+// (see .github/workflows/release.yml and PUBLISHING.md). Keep group/version in sync with pom.xml.
+group = 'com.aresstack'
 version = '0.1.0'
 
 def generatedOpenApiDir = layout.buildDirectory.dir('generated/huggingface-openapi')
@@ -84,32 +86,5 @@ publishing {
                 }
             }
         }
-    }
-    repositories {
-        // The legacy OSSRH Nexus was shut down on 2025-06-30. New releases go through the Central
-        // Publisher Portal. Its OSSRH Staging API is Nexus-compatible, so the standard maven-publish
-        // plugin can deploy to it; the staged deployment is then released from the Central Portal UI
-        // (or via its API). Snapshots use the Central snapshot repository.
-        maven {
-            name = 'centralPortal'
-            def releasesUrl = 'https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/'
-            def snapshotsUrl = 'https://central.sonatype.com/repository/maven-snapshots/'
-            url = version.toString().endsWith('SNAPSHOT') ? snapshotsUrl : releasesUrl
-            credentials {
-                username = providers.gradleProperty('centralUsername').orElse(providers.environmentVariable('CENTRAL_USERNAME')).getOrNull()
-                password = providers.gradleProperty('centralPassword').orElse(providers.environmentVariable('CENTRAL_PASSWORD')).getOrNull()
-            }
-        }
-    }
-}
-
-signing {
-    // Sign only when a key is configured (CI/release), so local builds and tests stay friction-free.
-    def signingKey = providers.environmentVariable('SIGNING_KEY').orElse(providers.gradleProperty('signingKey')).getOrNull()
-    def signingPassword = providers.environmentVariable('SIGNING_PASSWORD').orElse(providers.gradleProperty('signingPassword')).getOrNull()
-    required { signingKey != null && !gradle.taskGraph.hasTask('publishToMavenLocal') }
-    if (signingKey != null) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-        sign publishing.publications.mavenJava
     }
 }
