@@ -58,6 +58,8 @@ public final class HuggingFaceHub {
         private HuggingFaceHubClient client;
         private String endpoint = "https://huggingface.co";
         private HuggingFaceTokenProvider tokenProvider = new HuggingFaceTokenProvider.Anonymous();
+        private java.net.Proxy proxy;
+        private java.net.ProxySelector proxySelector;
 
         /** Use a custom client implementation; mainly for testing. Overrides endpoint/token settings. */
         public Builder client(HuggingFaceHubClient client) {
@@ -95,10 +97,28 @@ public final class HuggingFaceHub {
             return this;
         }
 
+        /**
+         * Route all HTTP traffic (API, redirects, downloads and uploads) through a fixed proxy.
+         * Takes precedence over {@link #proxySelector(java.net.ProxySelector)}.
+         */
+        public Builder proxy(java.net.Proxy proxy) {
+            this.proxy = proxy;
+            return this;
+        }
+
+        /**
+         * Consult a {@link java.net.ProxySelector} per request URL (for example a PAC- or
+         * Windows-settings-backed selector). Ignored when a fixed {@link #proxy(java.net.Proxy)} is set.
+         */
+        public Builder proxySelector(java.net.ProxySelector proxySelector) {
+            this.proxySelector = proxySelector;
+            return this;
+        }
+
         /** Build the configured {@link HuggingFaceHub}. */
         public HuggingFaceHub build() {
             if (client == null) {
-                HubHttpClient httpClient = new UrlConnectionHubHttpClient(endpoint, tokenProvider);
+                HubHttpClient httpClient = new UrlConnectionHubHttpClient(endpoint, tokenProvider, proxy, proxySelector);
                 client = new DefaultHuggingFaceHubClient(httpClient);
             }
             return new HuggingFaceHub(client);

@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.1.1
+
+- **Proxy support.** All HTTP traffic (API, redirects, downloads, LFS uploads) and the OAuth device
+  flow can be routed through a proxy. New hooks: `HuggingFaceHub.standard().proxy(Proxy)` /
+  `.proxySelector(ProxySelector)`, `HuggingFaceOAuth.deviceCode().proxy(...)` / `.proxySelector(...)`,
+  and a new `UrlConnectionHubHttpClient(endpoint, tokenProvider, proxy, proxySelector)` constructor.
+  A fixed proxy takes precedence over the selector; with neither set, connections stay direct.
+  Backward compatible — the existing two-argument constructor and all current call sites are
+  unchanged.
+
 ## 0.1.0
 
 First public release. Coordinates: `com.aresstack:huggingface4j:0.1.0` (Java 8, single runtime

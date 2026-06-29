@@ -97,6 +97,59 @@ final class UrlConnectionHubHttpClientTest {
     }
 
     @Test
+    void consultsProxySelectorPerRequest() throws Exception {
+        final AtomicReference<String> selectedHost = new AtomicReference<String>();
+        server.createContext("/api/models", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                respond(exchange, 200, "[]".getBytes(StandardCharsets.UTF_8));
+            }
+        });
+        java.net.ProxySelector selector = new java.net.ProxySelector() {
+            @Override
+            public java.util.List<java.net.Proxy> select(java.net.URI uri) {
+                selectedHost.set(uri.getHost() + ":" + uri.getPort());
+                return java.util.Collections.singletonList(java.net.Proxy.NO_PROXY);
+            }
+
+            @Override
+            public void connectFailed(java.net.URI uri, java.net.SocketAddress sa, IOException ioe) {
+            }
+        };
+
+        HubHttpClient client = new UrlConnectionHubHttpClient(endpoint("127.0.0.1"),
+                new HuggingFaceTokenProvider.Anonymous(), null, selector);
+        HubHttpResponse response = client.execute(HubHttpRequest.get("/api/models"));
+
+        assertEquals(200, response.getStatusCode());
+        assertEquals("127.0.0.1:" + port, selectedHost.get(), "the proxy selector must be consulted with the request URL");
+    }
+
+    @Test
+    void routesThroughConfiguredProxyAndFailsWhenUnreachable() throws Exception {
+        // Reserve then release a port so it is guaranteed closed -> a connection via this proxy fails,
+        // which proves the request is actually routed through the proxy instead of going direct.
+        int closedPort;
+        java.net.ServerSocket probe = new java.net.ServerSocket(0, 0, java.net.InetAddress.getByName("127.0.0.1"));
+        closedPort = probe.getLocalPort();
+        probe.close();
+
+        server.createContext("/api/models", new HttpHandler() {
+            @Override
+            public void handle(HttpExchange exchange) throws IOException {
+                respond(exchange, 200, "[]".getBytes(StandardCharsets.UTF_8));
+            }
+        });
+        java.net.Proxy deadProxy = new java.net.Proxy(java.net.Proxy.Type.HTTP,
+                new java.net.InetSocketAddress("127.0.0.1", closedPort));
+
+        HubHttpClient client = new UrlConnectionHubHttpClient(endpoint("127.0.0.1"),
+                new HuggingFaceTokenProvider.Anonymous(), deadProxy, null);
+
+        assertThrows(IOException.class, () -> client.execute(HubHttpRequest.get("/api/models")));
+    }
+
+    @Test
     void exposesResponseHeaders() throws Exception {
         server.createContext("/created", new HttpHandler() {
             @Override

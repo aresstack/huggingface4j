@@ -54,6 +54,28 @@ HuggingFaceHub hub = HuggingFaceHub.standard()
 The `Authorization: Bearer` header is only ever sent to the configured Hub host. If a download is
 redirected to a different host (for example a CDN), the token is **not** forwarded.
 
+## Proxy support (since 0.1.1)
+
+All HTTP traffic — API calls, redirects, downloads and LFS uploads — can be routed through a proxy.
+Configure either a fixed `Proxy` or a `ProxySelector` (e.g. backed by PAC or Windows proxy settings):
+
+```java
+// Fixed proxy
+java.net.Proxy proxy = new java.net.Proxy(
+        java.net.Proxy.Type.HTTP, new java.net.InetSocketAddress("proxy.corp", 8080));
+HuggingFaceHub hub = HuggingFaceHub.standard().accessToken("hf_...").proxy(proxy).build();
+
+// Per-request selection (PAC / system / Windows resolver)
+java.net.ProxySelector selector = myWindowsProxyResolver();   // returns Proxy.NO_PROXY for direct
+HuggingFaceHub hub = HuggingFaceHub.standard().proxySelector(selector).build();
+```
+
+A fixed `proxy(...)` takes precedence over `proxySelector(...)`; with neither set, connections are
+direct. The OAuth device flow accepts the same hooks via
+`HuggingFaceOAuth.deviceCode().proxy(...)` / `.proxySelector(...)`. Authenticated proxies (requiring
+`Proxy-Authorization`) are the caller's responsibility — supply a `ProxySelector` plus a JVM
+`Authenticator` as needed.
+
 ## Model search
 
 ```java

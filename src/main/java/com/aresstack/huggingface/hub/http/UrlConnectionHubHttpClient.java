@@ -8,8 +8,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.Proxy;
+import java.net.ProxySelector;
 import java.net.ProtocolException;
+import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,11 +25,26 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
     private final String endpoint;
     private final String endpointHost;
     private final HuggingFaceTokenProvider tokenProvider;
+    private final Proxy proxy;
+    private final ProxySelector proxySelector;
 
     public UrlConnectionHubHttpClient(String endpoint, HuggingFaceTokenProvider tokenProvider) {
+        this(endpoint, tokenProvider, null, null);
+    }
+
+    /**
+     * @param proxy         a fixed proxy to route all requests through, or {@code null}
+     * @param proxySelector a selector consulted per request URL when no fixed {@code proxy} is set,
+     *                      or {@code null} to use a direct connection. A fixed {@code proxy} takes
+     *                      precedence over the selector.
+     */
+    public UrlConnectionHubHttpClient(String endpoint, HuggingFaceTokenProvider tokenProvider,
+                                      Proxy proxy, ProxySelector proxySelector) {
         this.endpoint = trimTrailingSlash(endpoint);
         this.endpointHost = host(this.endpoint);
         this.tokenProvider = tokenProvider;
+        this.proxy = proxy;
+        this.proxySelector = proxySelector;
     }
 
     @Override
@@ -69,7 +88,7 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
 
     @Override
     public HubHttpResponse executeAbsolute(String url, String method, byte[] body, Map<String, String> headers) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        HttpURLConnection connection = open(new URL(url));
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(60000);
@@ -97,7 +116,7 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
     public HubHttpResponse uploadFile(String url, com.aresstack.huggingface.hub.upload.UploadSource source,
                                       Map<String, String> headers, String repoPath,
                                       com.aresstack.huggingface.hub.upload.UploadProgressListener listener) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        HttpURLConnection connection = open(new URL(url));
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(0);
@@ -153,7 +172,7 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
     }
 
     private HttpURLConnection openUrl(URL url, HubHttpRequest request, String accept, long rangeStart, boolean sendAuthorization) throws IOException {
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        HttpURLConnection connection = open(url);
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(60000);
@@ -218,6 +237,31 @@ public final class UrlConnectionHubHttpClient implements HubHttpClient {
                 throw exception;
             }
         }
+    }
+
+    /** Open a connection, routing it through the configured proxy (or selector) when present. */
+    private HttpURLConnection open(URL url) throws IOException {
+        Proxy resolved = resolveProxy(url);
+        URLConnection connection = resolved != null ? url.openConnection(resolved) : url.openConnection();
+        return (HttpURLConnection) connection;
+    }
+
+    private Proxy resolveProxy(URL url) {
+        if (proxy != null) {
+            return proxy;
+        }
+        if (proxySelector != null) {
+            try {
+                List<Proxy> proxies = proxySelector.select(url.toURI());
+                if (proxies != null && !proxies.isEmpty()) {
+                    // The first entry may be Proxy.NO_PROXY, which means a direct connection.
+                    return proxies.get(0);
+                }
+            } catch (URISyntaxException ignored) {
+                // Fall back to a direct connection for a URL that is not a valid URI.
+            }
+        }
+        return null;
     }
 
     private static boolean isRedirect(int statusCode) {

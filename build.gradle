@@ -7,7 +7,7 @@ plugins {
 // The Maven Central release is performed from pom.xml via the central-publishing-maven-plugin
 // (see .github/workflows/release.yml and PUBLISHING.md). Keep group/version in sync with pom.xml.
 group = 'com.aresstack'
-version = '0.1.0'
+version = '0.1.1'
 
 def generatedOpenApiDir = layout.buildDirectory.dir('generated/huggingface-openapi')
 

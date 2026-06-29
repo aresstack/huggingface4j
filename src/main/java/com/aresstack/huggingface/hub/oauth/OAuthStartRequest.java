@@ -16,6 +16,8 @@ public final class OAuthStartRequest {
     private String clientId;
     private String endpoint = "https://huggingface.co";
     private HubHttpClient httpClient;
+    private java.net.Proxy proxy;
+    private java.net.ProxySelector proxySelector;
     private final List<String> scopes = new ArrayList<String>();
 
     public OAuthStartRequest clientId(String clientId) {
@@ -30,6 +32,18 @@ public final class OAuthStartRequest {
 
     public OAuthStartRequest httpClient(HubHttpClient httpClient) {
         this.httpClient = httpClient;
+        return this;
+    }
+
+    /** Route the OAuth requests through a fixed proxy. */
+    public OAuthStartRequest proxy(java.net.Proxy proxy) {
+        this.proxy = proxy;
+        return this;
+    }
+
+    /** Consult a {@link java.net.ProxySelector} for the OAuth requests. */
+    public OAuthStartRequest proxySelector(java.net.ProxySelector proxySelector) {
+        this.proxySelector = proxySelector;
         return this;
     }
 
@@ -52,7 +66,7 @@ public final class OAuthStartRequest {
             throw new IllegalStateException("OAuth clientId must be set.");
         }
         HubHttpClient effectiveClient = httpClient == null
-                ? new UrlConnectionHubHttpClient(endpoint, new HuggingFaceTokenProvider.Anonymous())
+                ? new UrlConnectionHubHttpClient(endpoint, new HuggingFaceTokenProvider.Anonymous(), proxy, proxySelector)
                 : httpClient;
         HubQueryParameters form = new HubQueryParameters()
                 .set("client_id", clientId)
